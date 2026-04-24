@@ -1,0 +1,21 @@
+spring.application.name=spring-flash
+
+# ─── PostgreSQL ───────────────────────────────────────────────────────────────
+spring.datasource.url=jdbc:postgresql://localhost:5432/YOUR_DB_NAME
+spring.datasource.username=YOUR_PG_USERNAME
+spring.datasource.password=YOUR_PG_PASSWORD
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# ─── JPA / Hibernate ──────────────────────────────────────────────────────────
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+
+# IMPORTANT:
+#   First run → use "update"  (Hibernate creates/alters tables automatically)
+#   After tables exist → switch to "validate" (safer; fails fast if schema drifts)
+spring.jpa.hibernate.ddl-auto=update
+
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+
+# ─── Jackson ──────────────────────────────────────────────────────────────────
+spring.jackson.default-property-inclusion=non_null

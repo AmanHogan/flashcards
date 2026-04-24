@@ -1,0 +1,10 @@
+# Copy this file to .npmrc (gitignored) on machines that need a custom registry.
+# Typical work-laptop setup pointing at an internal Nexus / Artifactory instance:
+
+# registry=https://nexus.your-company.com/repository/npm-group/
+# //nexus.your-company.com/repository/npm-group/:_authToken=YOUR_TOKEN_HERE
+
+# If only scoped packages come from an internal registry:
+# @your-scope:registry=https://nexus.your-company.com/repository/npm-group/
+
+# On a personal machine with public npmjs.org you don't need this file at all.

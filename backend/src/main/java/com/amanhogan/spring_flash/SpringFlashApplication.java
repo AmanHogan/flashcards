@@ -5,9 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class SpringFlashApplication {
-
-	public static void main(String[] args) {
-		SpringApplication.run(SpringFlashApplication.class, args);
-	}
-
+    public static void main(String[] args) {
+        SpringApplication.run(SpringFlashApplication.class, args);
+    }
 }
