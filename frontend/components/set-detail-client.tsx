@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useId } from "react"
+import { useState, useId, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import type { FlashCard, FlashCardSet, Skill } from "@/types/types"
 import { setApi, cardApi, skillApi } from "@/lib/api"
@@ -24,11 +24,13 @@ import {
   ChevronRight,
   RotateCcw,
   Download,
+  Upload,
   Check,
   X,
   BookOpen,
   GraduationCap,
 } from "lucide-react"
+import { ImportCardsPanel, type ParsedCard } from "@/components/import-cards-panel"
 
 import {
   DndContext,
@@ -313,6 +315,7 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
   const [studyGroup, setStudyGroup] = useState<string | null>(null)
   const [studyIdx, setStudyIdx] = useState(0)
   const [flipped, setFlipped] = useState(false)
+  const [studyReversed, setStudyReversed] = useState(false)
 
   // Edit set state
   const [editingSet, setEditingSet] = useState(false)
@@ -332,6 +335,9 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
 
   // Insert-between state
   const [insertingAtIndex, setInsertingAtIndex] = useState<number | null>(null)
+
+  // Bulk import state
+  const [importing, setImporting] = useState(false)
 
   // Add skill state
   const [newSkillName, setNewSkillName] = useState("")
@@ -448,6 +454,20 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
     )
   }
 
+  async function handleBulkImport(parsedCards: ParsedCard[]) {
+    const payload = parsedCards.map((c, i) => ({
+      term: c.term,
+      definition: c.definition,
+      groupName: c.groupName,
+      hint: c.hint,
+      sortOrder: cards.length + i,
+      starred: false,
+    }))
+    const created = await cardApi.createBulk(set.id, payload)
+    setCards(cs => [...cs, ...created])
+    setImporting(false)
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -514,37 +534,99 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
     router.push("/dashboard/sets")
   }
 
+  // ── Keyboard navigation in study mode ──
+  useEffect(() => {
+    if (!studyMode) return
+    function onKey(e: KeyboardEvent) {
+      // Don't hijack keys when user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === " " || e.key === "Enter") { e.preventDefault(); setFlipped(f => !f) }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); nextCard() }
+      if (e.key === "ArrowLeft"  || e.key === "ArrowUp")   { e.preventDefault(); prevCard() }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [studyMode, studyIdx, studyCards.length])
+
   // ── Study Mode UI ──
   if (studyMode) {
     const current = studyCards[studyIdx]
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <Button variant="outline" onClick={() => setStudyMode(false)}>
             ← Back to set
           </Button>
           <span className="text-sm text-muted-foreground">
             {studyGroup ? `Group: ${studyGroup} · ` : ""}{studyIdx + 1} / {studyCards.length}
           </span>
+          <Button
+            variant={studyReversed ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setStudyReversed(r => !r); setFlipped(false) }}
+            title="Swap which side shows first"
+          >
+            ⇄ {studyReversed ? "Definition → Term" : "Term → Definition"}
+          </Button>
         </div>
 
         {current ? (
+          /* ── 3-D flip card ── */
           <div
             role="button"
             tabIndex={0}
             onClick={() => setFlipped(f => !f)}
-            onKeyDown={e => e.key === "Enter" && setFlipped(f => !f)}
-            className="min-h-64 border rounded-xl p-8 flex items-center justify-center text-center cursor-pointer hover:bg-accent/50 transition-colors bg-card"
+            onKeyDown={e => e.key === " " || e.key === "Enter" ? setFlipped(f => !f) : undefined}
+            className="cursor-pointer select-none"
+            style={{ perspective: "1200px", minHeight: "16rem" }}
+            title="Click or press Space to flip"
           >
-            <div className="space-y-3 w-full">
-              <Badge variant="outline" className="text-xs">{flipped ? "Definition" : "Term"}</Badge>
-              <div className="text-xl">
-                <Markdown>{flipped ? current.definition : current.term}</Markdown>
+            {/* Rotating inner wrapper */}
+            <div
+              style={{
+                transformStyle: "preserve-3d",
+                transition: "transform 0.45s cubic-bezier(0.4, 0.2, 0.2, 1)",
+                transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                position: "relative",
+                minHeight: "16rem",
+              }}
+            >
+              {/* Front face — Term (normal) or Definition (reversed) */}
+              <div
+                style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+                className="absolute inset-0 border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-card shadow-sm"
+              >
+                <Badge variant="outline" className="text-xs mb-4">
+                  {studyReversed ? "Definition" : "Term"}
+                </Badge>
+                <div className="text-xl w-full">
+                  <Markdown>{studyReversed ? current.definition : current.term}</Markdown>
+                </div>
+                {!studyReversed && current.hint && (
+                  <p className="text-sm text-muted-foreground italic mt-3">Hint: {current.hint}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-4 opacity-60">Click or press Space to flip</p>
               </div>
-              {!flipped && current.hint && (
-                <p className="text-sm text-muted-foreground italic">Hint: {current.hint}</p>
-              )}
-              {!flipped && <p className="text-xs text-muted-foreground">Click to flip</p>}
+
+              {/* Back face — Definition (normal) or Term (reversed) */}
+              <div
+                style={{
+                  backfaceVisibility: "hidden",
+                  WebkitBackfaceVisibility: "hidden",
+                  transform: "rotateY(180deg)",
+                }}
+                className="absolute inset-0 border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-accent/30 shadow-sm"
+              >
+                <Badge variant="secondary" className="text-xs mb-4">
+                  {studyReversed ? "Term" : "Definition"}
+                </Badge>
+                <div className="text-xl w-full">
+                  <Markdown>{studyReversed ? current.term : current.definition}</Markdown>
+                </div>
+                {studyReversed && current.hint && (
+                  <p className="text-sm text-muted-foreground italic mt-3">Hint: {current.hint}</p>
+                )}
+              </div>
             </div>
           </div>
         ) : (
@@ -659,10 +741,23 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
         <TabsContent value="cards" className="space-y-3 mt-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-muted-foreground">{cards.length} cards · drag <GripVertical className="inline h-3 w-3" /> to reorder · hover between cards to insert</span>
-            <Button size="sm" onClick={() => setAddingCard(!addingCard)}>
-              <Plus className="h-4 w-4 mr-1" /> Add to End
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => { setImporting(!importing); setAddingCard(false) }}>
+                <Upload className="h-4 w-4 mr-1" /> Import
+              </Button>
+              <Button size="sm" onClick={() => { setAddingCard(!addingCard); setImporting(false) }}>
+                <Plus className="h-4 w-4 mr-1" /> Add to End
+              </Button>
+            </div>
           </div>
+
+          {importing && (
+            <ImportCardsPanel
+              groups={groups}
+              onImport={handleBulkImport}
+              onClose={() => setImporting(false)}
+            />
+          )}
 
           {addingCard && (
             <Card className="bg-accent/30 border-dashed">
