@@ -8,8 +8,16 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Download, Trash2, Search } from "lucide-react"
-import { exportAllSetsToText } from "@/lib/utils/export-markdown"
+import { Download, Trash2, Search, FileText, ChevronDown } from "lucide-react"
+import { exportAllSetsToText, exportAllSetsToMarkdownNotes } from "@/lib/utils/export-markdown"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface Props {
   initialSets: FlashCardSet[]
@@ -55,13 +63,31 @@ export function SetsListClient({ initialSets }: Props) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <Button
-          variant="outline"
-          onClick={() => exportAllSetsToText(sets)}
-          disabled={sets.length === 0}
-        >
-          <Download className="h-4 w-4 mr-1" /> Export All
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" disabled={sets.length === 0}>
+              <Download className="h-4 w-4 mr-1" /> Export All <ChevronDown className="h-3 w-3 ml-1" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Export all sets as</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => exportAllSetsToText(sets)}>
+              <Download className="h-3.5 w-3.5 mr-2 shrink-0" />
+              <div>
+                <div className="text-sm">Flashcard format</div>
+                <div className="text-xs text-muted-foreground">.txt · Quizlet-compatible</div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => exportAllSetsToMarkdownNotes(sets)}>
+              <FileText className="h-3.5 w-3.5 mr-2 shrink-0" />
+              <div>
+                <div className="text-sm">Notes</div>
+                <div className="text-xs text-muted-foreground">.md · Separated by ---</div>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {filtered.length === 0 ? (

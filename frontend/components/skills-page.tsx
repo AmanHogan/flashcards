@@ -22,13 +22,13 @@ export function SkillsPage({ initialSkills, sets }: Props) {
   const [name, setName] = useState("")
   const [proficiency, setProficiency] = useState(3)
   const [date, setDate] = useState("")
-  const [flashCardSetId, setFlashCardSetId] = useState<string>("")
+  const [flashCardSetId, setFlashCardSetId] = useState<string>("none")
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editName, setEditName] = useState("")
   const [editProf, setEditProf] = useState(3)
   const [editDate, setEditDate] = useState("")
-  const [editSetId, setEditSetId] = useState<string>("")
+  const [editSetId, setEditSetId] = useState<string>("none")
   const [filterSet, setFilterSet] = useState<string>("all")
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -92,10 +92,10 @@ export function SkillsPage({ initialSkills, sets }: Props) {
         name,
         proficiency,
         date: date || undefined,
-        flashCardSetId: flashCardSetId ? Number(flashCardSetId) : undefined,
+        flashCardSetId: flashCardSetId && flashCardSetId !== "none" ? Number(flashCardSetId) : undefined,
       })
       setSkills([...skills, skill])
-      setName(""); setProficiency(3); setDate(""); setFlashCardSetId("")
+      setName(""); setProficiency(3); setDate(""); setFlashCardSetId("none")
     } catch (e: any) { alert(e.message) }
     setAdding(false)
   }
@@ -105,7 +105,7 @@ export function SkillsPage({ initialSkills, sets }: Props) {
     setEditName(skill.name)
     setEditProf(skill.proficiency)
     setEditDate(skill.date ?? "")
-    setEditSetId(skill.flashCardSetId?.toString() ?? "")
+    setEditSetId(skill.flashCardSetId?.toString() ?? "none")
   }
 
   async function saveEdit(id: number) {
@@ -114,7 +114,7 @@ export function SkillsPage({ initialSkills, sets }: Props) {
         name: editName,
         proficiency: editProf,
         date: editDate || undefined,
-        flashCardSetId: editSetId ? Number(editSetId) : undefined,
+        flashCardSetId: editSetId && editSetId !== "none" ? Number(editSetId) : undefined,
       })
       setSkills(ss => ss.map(s => s.id === id ? updated : s))
       setEditingId(null)
@@ -172,7 +172,7 @@ export function SkillsPage({ initialSkills, sets }: Props) {
                       <SelectValue placeholder="None" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {sets.map(s => (
                         <SelectItem key={s.id} value={String(s.id)}>{s.title}</SelectItem>
                       ))}
@@ -234,7 +234,7 @@ export function SkillsPage({ initialSkills, sets }: Props) {
                                 <SelectValue placeholder="None" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">None</SelectItem>
+                                <SelectItem value="none">None</SelectItem>
                                 {sets.map(s => (
                                   <SelectItem key={s.id} value={String(s.id)}>{s.title}</SelectItem>
                                 ))}

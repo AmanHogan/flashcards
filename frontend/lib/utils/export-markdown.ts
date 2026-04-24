@@ -2,10 +2,9 @@ import type { FlashCard, FlashCardSet, Skill } from "@/types/types"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Build one tab-delimited line for a card.
+/** Build one tab-delimited line for a card (flashcard import/export format).
  *  Columns: term  definition  [groupName]  [hint]
- *  Extra columns are only written when at least one card in the set has a value,
- *  so the file stays clean for simple sets but round-trips fully for rich ones.
+ *  Extra columns only written when at least one card in the set has that data.
  */
 function cardToLine(
   card: Pick<FlashCard, "term" | "definition" | "groupName" | "hint">,
@@ -18,7 +17,76 @@ function cardToLine(
   return parts.join("\t")
 }
 
-// ── Exports ───────────────────────────────────────────────────────────────────
+/** Render one FlashCardSet as a Markdown notes block. */
+function setToMarkdown(set: FlashCardSet): string {
+  const cards = set.flashCards ?? []
+  const lines: string[] = []
+
+  lines.push(`# ${set.title}`)
+  if (set.topic) lines.push(`> ${set.topic}`)
+  if (set.description) lines.push(`\n${set.description}`)
+  if ((set.tags ?? []).length > 0) lines.push(`\n**Tags:** ${set.tags!.join(", ")}`)
+  lines.push("")
+
+  // Group cards by groupName (ungrouped cards first under an implicit section)
+  const groups = Array.from(new Set(cards.map(c => c.groupName ?? "").filter(Boolean)))
+  const ungrouped = cards.filter(c => !c.groupName)
+  const grouped   = groups.map(g => ({ name: g, cards: cards.filter(c => c.groupName === g) }))
+
+  const renderCards = (subset: FlashCard[]) => {
+    for (const card of subset) {
+      lines.push(`**${card.term}**`)
+      lines.push(`${card.definition}`)
+      if (card.hint) lines.push(`*Hint: ${card.hint}*`)
+      lines.push("")
+    }
+  }
+
+  if (ungrouped.length > 0) renderCards(ungrouped)
+
+  for (const { name, cards: gc } of grouped) {
+    lines.push(`## ${name}`)
+    lines.push("")
+    renderCards(gc)
+  }
+
+  return lines.join("\n")
+}
+
+// ── Exports — Flashcard format (tab-delimited, Quizlet-compatible) ────────────
+
+export function exportSetToText(title: string, cards: FlashCard[]): void {
+  const includeGroup = cards.some(c => c.groupName)
+  const includeHint  = cards.some(c => c.hint)
+  const lines = cards.map(c => cardToLine(c, includeGroup, includeHint))
+  trigger(lines.join("\n"), `${slug(title)}.txt`, "text/plain")
+}
+
+export function exportAllSetsToText(sets: FlashCardSet[]): void {
+  const lines: string[] = []
+  for (const set of sets) {
+    lines.push(`# ${set.title}`)
+    const cards = set.flashCards ?? []
+    const includeGroup = cards.some(c => c.groupName)
+    const includeHint  = cards.some(c => c.hint)
+    for (const c of cards) lines.push(cardToLine(c, includeGroup, includeHint))
+    lines.push("")
+  }
+  trigger(lines.join("\n"), "all_sets.txt", "text/plain")
+}
+
+// ── Exports — Markdown notes ──────────────────────────────────────────────────
+
+export function exportSetToMarkdownNotes(set: FlashCardSet): void {
+  trigger(setToMarkdown(set), `${slug(set.title)}.md`, "text/markdown")
+}
+
+export function exportAllSetsToMarkdownNotes(sets: FlashCardSet[]): void {
+  const blocks = sets.map(setToMarkdown)
+  trigger(blocks.join("\n\n---\n\n"), "all_sets_notes.md", "text/markdown")
+}
+
+// ── Skills export ─────────────────────────────────────────────────────────────
 
 export function exportSkillsToMarkdown(skills: Skill[]): void {
   const byProficiency: Record<number, Skill[]> = {}
@@ -41,32 +109,16 @@ export function exportSkillsToMarkdown(skills: Skill[]): void {
   trigger(lines.join("\n"), "skills.md", "text/markdown")
 }
 
-export function exportSetToText(title: string, cards: FlashCard[]): void {
-  const includeGroup = cards.some(c => c.groupName)
-  const includeHint = cards.some(c => c.hint)
-  const lines = cards.map(c => cardToLine(c, includeGroup, includeHint))
-  trigger(lines.join("\n"), `${title.replace(/\s+/g, "_")}.txt`, "text/plain")
-}
+// ── Util ──────────────────────────────────────────────────────────────────────
 
-export function exportAllSetsToText(sets: FlashCardSet[]): void {
-  const lines: string[] = []
-  for (const set of sets) {
-    lines.push(`# ${set.title}`)
-    const cards = set.flashCards ?? []
-    const includeGroup = cards.some(c => c.groupName)
-    const includeHint = cards.some(c => c.hint)
-    for (const c of cards) {
-      lines.push(cardToLine(c, includeGroup, includeHint))
-    }
-    lines.push("")
-  }
-  trigger(lines.join("\n"), "all_sets.txt", "text/plain")
+function slug(text: string): string {
+  return text.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "")
 }
 
 function trigger(content: string, filename: string, mime: string): void {
   const blob = new Blob([content], { type: mime })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement("a")
   a.href = url
   a.download = filename
   a.click()

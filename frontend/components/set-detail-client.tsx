@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import type { FlashCard, FlashCardSet, Skill } from "@/types/types"
 import { setApi, cardApi, skillApi } from "@/lib/api"
 import { Markdown } from "@/components/markdown"
-import { exportSetToText } from "@/lib/utils/export-markdown"
+import { exportSetToText, exportSetToMarkdownNotes } from "@/lib/utils/export-markdown"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,6 +14,14 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Star,
   Pencil,
@@ -25,10 +33,16 @@ import {
   RotateCcw,
   Download,
   Upload,
+  FileText,
+  ChevronDown,
   Check,
   X,
   BookOpen,
   GraduationCap,
+  ThumbsUp,
+  ThumbsDown,
+  BarChart2,
+  RefreshCw,
 } from "lucide-react"
 import { ImportCardsPanel, type ParsedCard } from "@/components/import-cards-panel"
 
@@ -295,6 +309,37 @@ function SortableCard({
   )
 }
 
+// ─── Circle progress ────────────────────────────────────────────────────────
+
+function CircleProgress({
+  value, total, size = 160, color = "#22c55e",
+}: { value: number; total: number; size?: number; color?: string }) {
+  const sw = 14
+  const r = (size - sw * 2) / 2
+  const circ = 2 * Math.PI * r
+  const pct = total > 0 ? value / total : 0
+  const offset = circ * (1 - pct)
+  return (
+    <svg width={size} height={size} style={{ display: "block" }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={sw} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        fill="none" stroke={color} strokeWidth={sw}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: "stroke-dashoffset 0.6s ease" }}
+      />
+      <text x={size / 2} y={size / 2 - 10} textAnchor="middle" fontSize="26" fontWeight="700" fill="currentColor">
+        {Math.round(pct * 100)}%
+      </text>
+      <text x={size / 2} y={size / 2 + 14} textAnchor="middle" fontSize="13" fill="#6b7280">
+        {value} / {total}
+      </text>
+    </svg>
+  )
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 interface Props {
@@ -316,6 +361,13 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
   const [studyIdx, setStudyIdx] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [studyReversed, setStudyReversed] = useState(false)
+
+  // Progress tracking state
+  const [trackingOn, setTrackingOn] = useState(false)
+  const [knownIds, setKnownIds] = useState<Set<number>>(new Set())
+  const [stillIds, setStillIds] = useState<Set<number>>(new Set())
+  const [studyFilter, setStudyFilter] = useState<number[] | null>(null) // null = all
+  const [showSummary, setShowSummary] = useState(false)
 
   // Edit set state
   const [editingSet, setEditingSet] = useState(false)
@@ -359,20 +411,52 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
 
   // Derived
   const groups = Array.from(new Set(cards.map(c => c.groupName).filter(Boolean))) as string[]
-  const studyCards = studyGroup ? cards.filter(c => c.groupName === studyGroup) : cards
+  const studyCards = studyFilter !== null
+    ? cards.filter(c => studyFilter.includes(c.id))
+    : studyGroup ? cards.filter(c => c.groupName === studyGroup) : cards
 
   // ── Study mode ──
   function startStudy(group?: string) {
     setStudyGroup(group ?? null)
+    setStudyFilter(null)
     setStudyIdx(0)
     setFlipped(false)
     setStudyMode(true)
+    setKnownIds(new Set())
+    setStillIds(new Set())
+    setShowSummary(false)
     setApi.study(set.id).catch(() => {})
   }
 
   function nextCard() { setFlipped(false); setStudyIdx(i => Math.min(i + 1, studyCards.length - 1)) }
   function prevCard() { setFlipped(false); setStudyIdx(i => Math.max(i - 1, 0)) }
   function resetStudy() { setStudyIdx(0); setFlipped(false) }
+
+  function markCard(cardId: number, known: boolean) {
+    if (known) {
+      setKnownIds(s => new Set([...s, cardId]))
+      setStillIds(s => { const n = new Set(s); n.delete(cardId); return n })
+    } else {
+      setStillIds(s => new Set([...s, cardId]))
+      setKnownIds(s => { const n = new Set(s); n.delete(cardId); return n })
+    }
+    // advance or show summary
+    if (studyIdx < studyCards.length - 1) {
+      setTimeout(() => nextCard(), 280)
+    } else {
+      setTimeout(() => setShowSummary(true), 350)
+    }
+  }
+
+  function continueStillLearning() {
+    const ids = [...stillIds]
+    setStudyFilter(ids)
+    setKnownIds(new Set())
+    setStillIds(new Set())
+    setStudyIdx(0)
+    setFlipped(false)
+    setShowSummary(false)
+  }
 
   // ── Edit set ──
   async function saveSet() {
@@ -536,39 +620,162 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
 
   // ── Keyboard navigation in study mode ──
   useEffect(() => {
-    if (!studyMode) return
+    if (!studyMode || showSummary) return
     function onKey(e: KeyboardEvent) {
-      // Don't hijack keys when user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      // Don't steal Space/Enter if a button has focus (so Know it / Still learning are clickable via keyboard)
+      if (e.target instanceof HTMLButtonElement) return
       if (e.key === " " || e.key === "Enter") { e.preventDefault(); setFlipped(f => !f) }
       if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); nextCard() }
       if (e.key === "ArrowLeft"  || e.key === "ArrowUp")   { e.preventDefault(); prevCard() }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [studyMode, studyIdx, studyCards.length])
+  }, [studyMode, showSummary, studyIdx, studyCards.length])
 
   // ── Study Mode UI ──
   if (studyMode) {
     const current = studyCards[studyIdx]
+    const reviewedCount = knownIds.size + stillIds.size
+    const knownCount = knownIds.size
+    const stillCount = stillIds.size
+
+    // ── Summary screen ──
+    if (showSummary) {
+      const notReviewed = studyCards.length - reviewedCount
+      return (
+        <div className="space-y-8">
+          <div className="flex items-center justify-between">
+            <Button variant="outline" onClick={() => setStudyMode(false)}>← Back to set</Button>
+          </div>
+
+          <div className="flex flex-col items-center gap-6 py-4">
+            <div>
+              <h2 className="text-2xl font-bold text-center mb-1">Session Complete!</h2>
+              <p className="text-muted-foreground text-center text-sm">
+                {studyCards.length} card{studyCards.length !== 1 ? "s" : ""} reviewed
+              </p>
+            </div>
+
+            {/* Circle */}
+            <CircleProgress
+              value={knownCount}
+              total={studyCards.length}
+              size={180}
+              color={knownCount / studyCards.length >= 0.8 ? "#22c55e" : knownCount / studyCards.length >= 0.5 ? "#eab308" : "#ef4444"}
+            />
+
+            {/* Stats */}
+            <div className="flex items-center gap-6 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-sm bg-green-500" />
+                <span className="font-medium text-green-600">{knownCount} Know it</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-3 rounded-sm bg-red-400" />
+                <span className="font-medium text-red-500">{stillCount} Still learning</span>
+              </div>
+              {notReviewed > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-sm bg-muted-foreground/40" />
+                  <span className="text-muted-foreground">{notReviewed} skipped</span>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-wrap gap-3 justify-center">
+              {stillCount > 0 && (
+                <Button onClick={continueStillLearning}>
+                  <RefreshCw className="h-4 w-4 mr-1.5" />
+                  Study {stillCount} still learning
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setKnownIds(new Set()); setStillIds(new Set())
+                  setStudyIdx(0); setFlipped(false)
+                  setStudyFilter(null); setShowSummary(false)
+                }}
+              >
+                <RotateCcw className="h-4 w-4 mr-1.5" /> Restart all
+              </Button>
+              <Button variant="ghost" onClick={() => setStudyMode(false)}>
+                Back to set
+              </Button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // ── Card view ──
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <Button variant="outline" onClick={() => setStudyMode(false)}>
+      <div className="space-y-5">
+
+        {/* Top bar */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => setStudyMode(false)}>
             ← Back to set
           </Button>
-          <span className="text-sm text-muted-foreground">
-            {studyGroup ? `Group: ${studyGroup} · ` : ""}{studyIdx + 1} / {studyCards.length}
-          </span>
-          <Button
-            variant={studyReversed ? "default" : "outline"}
-            size="sm"
-            onClick={() => { setStudyReversed(r => !r); setFlipped(false) }}
-            title="Swap which side shows first"
-          >
-            ⇄ {studyReversed ? "Definition → Term" : "Term → Definition"}
-          </Button>
+
+          {/* Progress bar when tracking is on */}
+          {trackingOn && reviewedCount > 0 ? (
+            <div className="flex-1 min-w-32 max-w-48 space-y-0.5">
+              <div className="h-2 rounded-full bg-muted overflow-hidden flex">
+                <div
+                  className="bg-green-500 h-full transition-all duration-300"
+                  style={{ width: `${(knownCount / studyCards.length) * 100}%` }}
+                />
+                <div
+                  className="bg-red-400 h-full transition-all duration-300"
+                  style={{ width: `${(stillCount / studyCards.length) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                {knownCount} ✓ · {stillCount} ✗ · {studyCards.length - reviewedCount} left
+              </p>
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {studyGroup ? `${studyGroup} · ` : ""}{studyIdx + 1} / {studyCards.length}
+            </span>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant={studyReversed ? "default" : "outline"}
+              size="sm"
+              onClick={() => { setStudyReversed(r => !r); setFlipped(false) }}
+              title="Swap which side shows first"
+            >
+              ⇄ {studyReversed ? "Def → Term" : "Term → Def"}
+            </Button>
+            {/* Track progress toggle */}
+            <button
+              role="switch"
+              aria-checked={trackingOn}
+              onClick={() => setTrackingOn(t => !t)}
+              title={trackingOn ? "Disable progress tracking" : "Enable progress tracking"}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none
+                ${trackingOn ? "bg-primary" : "bg-muted-foreground/30"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition-transform
+                  ${trackingOn ? "translate-x-5" : "translate-x-0.5"}`}
+              />
+            </button>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Track progress</span>
+          </div>
         </div>
+
+        {/* Card number (when tracking hides center counter) */}
+        {trackingOn && (
+          <p className="text-center text-xs text-muted-foreground">
+            Card {studyIdx + 1} of {studyCards.length}
+          </p>
+        )}
 
         {current ? (
           /* ── 3-D flip card ── */
@@ -581,7 +788,6 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
             style={{ perspective: "1200px", minHeight: "16rem" }}
             title="Click or press Space to flip"
           >
-            {/* Rotating inner wrapper */}
             <div
               style={{
                 transformStyle: "preserve-3d",
@@ -591,7 +797,7 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
                 minHeight: "16rem",
               }}
             >
-              {/* Front face — Term (normal) or Definition (reversed) */}
+              {/* Front face */}
               <div
                 style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
                 className="absolute inset-0 border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-card shadow-sm"
@@ -608,7 +814,7 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
                 <p className="text-xs text-muted-foreground mt-4 opacity-60">Click or press Space to flip</p>
               </div>
 
-              {/* Back face — Definition (normal) or Term (reversed) */}
+              {/* Back face */}
               <div
                 style={{
                   backfaceVisibility: "hidden",
@@ -633,6 +839,30 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
           <Card><CardContent className="py-12 text-center text-muted-foreground">No cards in this group.</CardContent></Card>
         )}
 
+        {/* Know it / Still learning buttons */}
+        {trackingOn && current && (
+          <div className="flex items-center justify-center gap-4">
+            <Button
+              size="lg"
+              variant="outline"
+              className={`gap-2 border-2 hover:border-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950
+                ${stillIds.has(current.id) ? "border-red-400 bg-red-50 text-red-600 dark:bg-red-950" : ""}`}
+              onClick={() => markCard(current.id, false)}
+            >
+              <X className="h-5 w-5" /> Still learning
+            </Button>
+            <Button
+              size="lg"
+              className={`gap-2 border-2
+                ${knownIds.has(current.id) ? "bg-green-600 hover:bg-green-700 border-green-600" : "bg-green-500 hover:bg-green-600 border-green-500"}`}
+              onClick={() => markCard(current.id, true)}
+            >
+              <Check className="h-5 w-5" /> Know it
+            </Button>
+          </div>
+        )}
+
+        {/* Nav row */}
         <div className="flex items-center justify-center gap-3">
           <Button variant="outline" size="sm" onClick={prevCard} disabled={studyIdx === 0}>
             <ChevronLeft className="h-4 w-4" />
@@ -643,6 +873,11 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
           <Button variant="outline" size="sm" onClick={nextCard} disabled={studyIdx >= studyCards.length - 1}>
             <ChevronRight className="h-4 w-4" />
           </Button>
+          {trackingOn && reviewedCount === studyCards.length && (
+            <Button size="sm" onClick={() => setShowSummary(true)}>
+              <BarChart2 className="h-4 w-4 mr-1" /> See results
+            </Button>
+          )}
         </div>
 
         {current && (
@@ -715,9 +950,31 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
           <Button variant="outline" size="sm" onClick={() => setEditingSet(!editingSet)}>
             <Pencil className="h-4 w-4 mr-1" /> Edit
           </Button>
-          <Button variant="outline" size="sm" onClick={() => exportSetToText(set.title, cards)}>
-            <Download className="h-4 w-4 mr-1" /> Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-1" /> Export <ChevronDown className="h-3 w-3 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Export as</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => exportSetToText(set.title, cards)}>
+                <Download className="h-3.5 w-3.5 mr-2 shrink-0" />
+                <div>
+                  <div className="text-sm">Flashcard format</div>
+                  <div className="text-xs text-muted-foreground">.txt · Quizlet-compatible</div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportSetToMarkdownNotes({ ...set, flashCards: cards })}>
+                <FileText className="h-3.5 w-3.5 mr-2 shrink-0" />
+                <div>
+                  <div className="text-sm">Notes</div>
+                  <div className="text-xs text-muted-foreground">.md · Readable markdown</div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="destructive" size="sm" onClick={handleDeleteSet}>
             <Trash2 className="h-4 w-4" />
           </Button>
