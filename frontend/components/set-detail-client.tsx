@@ -785,7 +785,7 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
             onClick={() => setFlipped(f => !f)}
             onKeyDown={e => e.key === " " || e.key === "Enter" ? setFlipped(f => !f) : undefined}
             className="cursor-pointer select-none"
-            style={{ perspective: "1200px", minHeight: "16rem" }}
+            style={{ perspective: "1200px" }}
             title="Click or press Space to flip"
           >
             <div
@@ -794,13 +794,12 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
                 transition: "transform 0.45s cubic-bezier(0.4, 0.2, 0.2, 1)",
                 transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
                 position: "relative",
-                minHeight: "16rem",
               }}
             >
-              {/* Front face */}
+              {/* Front face — in normal flow, its height drives the card size */}
               <div
                 style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
-                className="absolute inset-0 border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-card shadow-sm"
+                className="w-full min-h-64 max-h-[65vh] overflow-y-auto border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-card shadow-sm"
               >
                 <Badge variant="outline" className="text-xs mb-4">
                   {studyReversed ? "Definition" : "Term"}
@@ -814,14 +813,14 @@ export function SetDetailClient({ set: initialSet, skills: initialSkills }: Prop
                 <p className="text-xs text-muted-foreground mt-4 opacity-60">Click or press Space to flip</p>
               </div>
 
-              {/* Back face */}
+              {/* Back face — absolutely fills the height set by the front face */}
               <div
                 style={{
                   backfaceVisibility: "hidden",
                   WebkitBackfaceVisibility: "hidden",
                   transform: "rotateY(180deg)",
                 }}
-                className="absolute inset-0 border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-accent/30 shadow-sm"
+                className="absolute inset-0 overflow-y-auto border rounded-xl p-8 flex flex-col items-center justify-center text-center bg-accent/30 shadow-sm"
               >
                 <Badge variant="secondary" className="text-xs mb-4">
                   {studyReversed ? "Term" : "Definition"}
